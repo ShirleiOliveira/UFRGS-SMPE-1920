@@ -1,0 +1,140 @@
+---
+title: "deforestation_amazon_states_prodes"
+author: "shirlei_carmo"
+date: "11/11/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Installing needed packages
+```{r Setup}
+# Mpack function: install and load multiple R packages.
+# check to see if packages are installed. Install them if they are not, then load them into the R session.
+
+Mpack <- function(packg){
+new.packg <- packg[!(packg %in% installed.packages()[, "Package"])]
+if (length(new.packg))
+install.packages(new.packg, dependencies = TRUE)
+sapply(packg, require, character.only = TRUE)
+}
+
+# usage
+packages <- c('plyr','reshape','ggplot2','dplyr','plotly','devtools')
+Mpack(packages)
+
+devtools::install_github("r-spatial/sf")
+devtools::install_github("italocegatta/brmap")
+```
+
+
+Used packages and libraries 
+```{r session INfo}
+sessionInfo()
+```
+
+Reading CSV
+Dataset available on Brazilian Open Data Portal = http://dados.gov.br/dataset/sistema-nacional-de-informacoes-florestais-snif/resource/7da885b0-141e-4463-a374-a07603fdf70a
+```{r}
+dtset_path = "http://homolog-dados.mma.gov.br/pt_BR/dataset/ffd9ab35-5719-4ec1-8d13-ae8f738bebc2/resource/7da885b0-141e-4463-a374-a07603fdf70a/download/desmatamento_amazonia_estados_prodes_2012-2015.csv"
+
+deforestation_amazon_states_prodes <- read.csv(dtset_path,
+                                               header = TRUE,
+                                               sep = ";", dec = ",",
+                                               strip.white = TRUE, stringsAsFactors = FALSE) 
+
+
+names(deforestation_amazon_states_prodes) <- c("Year", "Biome", "Category","State", "Number of Records","Period","Deforested_Area") 
+head(deforestation_amazon_states_prodes)
+```
+
+  
+```{r Deforested_vs_State}
+library(plotly)
+
+plotDefState <- deforestation_amazon_states_prodes %>%
+  group_by(Year, State) %>%
+  summarise(Deforested_Area_Hc = sum(Deforested_Area)) %>% 
+  filter(Year != "Até 2012")  %>% # Filtering outlier value
+  ggplot(aes(x = State , y = Deforested_Area_Hc, group= Year)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_point() + geom_smooth(method="lm") + facet_wrap(~Year)
+
+print(plotDefState + labs(title= "Hectares Deforested vs State (per Year)",
+                      y="Deforested Area (Hc)", x = "Amazon States"))
+
+ggsave("deforestedstate.png", width = 6, height = 6, dpi = "screen")
+```
+
+
+```{r Deforested_vs_Year}
+plotDefYear <- deforestation_amazon_states_prodes %>% 
+  group_by(Year, State) %>% 
+  select(Year, State, Deforested_Area) %>%
+  filter(Year != "Até 2012") %>%
+  ggplot(aes(x = Year,
+             y = Deforested_Area)) +
+  geom_point(aes( size = Deforested_Area, color= Deforested_Area), alpha = 0.7) +
+  facet_wrap(~ State)
+
+print(plotDefYear + labs(title= "Hectares Deforested vs Year (per State)",
+                      y="Deforested Area (Hc)", x = "Year"))
+ggsave("deforestedyear.png", width = 6, height = 6, dpi = "screen")
+```
+
+Plotting Maps with brmap lib
+Polygons of Brazilian territorial units in R - By states
+```{r}
+library(tibble)
+library(brmap)
+
+summary(brmap_estado)
+```
+
+Plotting Brazil Maps
+```{r plot_br_map}
+ggplot(brmap_estado) +
+  geom_sf()
+ggsave("brmap.png", width = 6, height = 6, dpi = "screen")
+```
+
+
+Joining Data Tables
+Plotting Deforested area in Amazonia, by state - Prodes (2012-2015)
+```{r joining_data_tables}
+library(dplyr)
+library(ggplot2)
+
+
+stateVsDeforested <- left_join(brmap_estado,
+                  deforestation_amazon_states_prodes %>%
+                  group_by(State) %>%
+                  summarise(Deforested_Area_Hc = sum(Deforested_Area)),
+                  by = c("estado_nome" = "State")) 
+
+ggplot(stateVsDeforested) +
+  geom_sf(aes(fill = Deforested_Area_Hc)) +
+  scale_fill_distiller(
+                       'Deforested Area (Hc)',
+                       type = "seq",
+                       palette = "Reds",
+                       direction = 1) +
+   theme(
+      panel.background = element_blank(),
+      panel.grid.major = element_line(color = "transparent"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+      ) +
+  labs(title = "Amazon Deforestation by State - Prodes (2012-2015) ",
+       subtitle = "Source: Brazilian Forest Service (SNIF)") 
+
+ggsave("map.png", width = 6, height = 6, dpi = "screen")
+```
+
+  
+
+
